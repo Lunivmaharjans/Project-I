@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login Page</title>
+
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        background: url("./assets/library\ bg.jpg") no-repeat center center/cover;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .domain {
+        margin-top: 40px;
+        font-size: 32px;
+        color: white;
+        font-weight: 700;
+        text-shadow: 0px 0px 5px rgba(0,0,0,0.7);
+    }
+
+    .login-box {
+        background: white;
+        width: 400px;
+        height: 350px;
+        padding: 40px;
+        border-radius: 15px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        margin-top: 80px;
+        text-align: center;
+    }
+
+    .login-box h2 {
+        margin-bottom: 20px;
+        font-size: 22px;
+        font-weight: 700;
+    }
+
+    label {
+        display: block;
+        text-align: left;
+        font-size: 14px;
+        font-weight: bold;
+        margin-top: 20px;
+    }
+
+    input {
+        width: 95%;
+        padding: 10px;
+        margin-top: 5px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        font-size: 14px;
+    }
+
+    .forgot {
+        text-align: right;
+        margin-top: 5px;
+    }
+
+    .forgot a {
+        font-size: 13px;
+        text-decoration: none;
+        color: #007bff;
+    }
+
+    .btn {
+        width: 100%;
+        padding: 12px;
+        margin-top: 20px;
+        background-color: #c66;
+        color: white;
+        border: none;
+        font-size: 16px;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+
+    .signup {
+        margin-top: 10px;
+        font-size: 13px;
+    }
+
+    .signup a {
+        color: #007bff;
+        text-decoration: none;
+        font-weight: bold;
+    }
+
+    /* error styling */
+    .error {
+        color: red;
+        font-size: 13px;
+        margin-top: 5px;
+        text-align: left;
+    }
+
+    .password-wrapper {
+        position: relative;
+    }
+
+    .toggle-btn {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: pointer;
+        font-size: 12px;
+        color: #007bff;
+    }
+</style>
+
+</head>
+
+<body>
+
+    <div class="domain">Livo</div>
+
+    <div class="login-box">
+        <h2>Welcome Back</h2>
+
+        <form id="loginForm">
+
+            <label>Email or Phone</label>
+            <input type="text" id="emailPhone">
+            <div id="emailError" class="error"></div>
+
+            <label>Password</label>
+            <div class="password-wrapper">
+                <input type="password" id="password">
+                <span class="toggle-btn" onclick="togglePassword()">Show</span>
+            </div>
+            <div id="passwordError" class="error"></div>
+
+            <div class="forgot">
+                <a href="#">Forgot Password</a>
+            </div>
+
+            <button type="submit" class="btn">Login</button>
+
+            <div class="signup">
+                Don't Have an account? <a href="register.html">Sign Up</a>
+            </div>
+        </form>
+    </div>
+
+<script>
+    function togglePassword() {
+        const passField = document.getElementById("password");
+        const toggleBtn = document.querySelector(".toggle-btn");
+
+        if (passField.type === "password") {
+            passField.type = "text";
+            toggleBtn.textContent = "Hide";
+        } else {
+            passField.type = "password";
+            toggleBtn.textContent = "Show";
+        }
+    }
+
+
+    document.getElementById("loginForm").addEventListener("submit", function(event) {
+        event.preventDefault(); 
+
+        let emailPhone = document.getElementById("emailPhone").value.trim();
+        let password = document.getElementById("password").value.trim();
+
+        let valid = true;
+
+        document.getElementById("emailError").textContent = "";
+        document.getElementById("passwordError").textContent = "";
+
+
+        if (emailPhone === "") {
+            document.getElementById("emailError").textContent = "Please enter email or phone.";
+            valid = false;
+        }
+
+        if (password === "") {
+            document.getElementById("passwordError").textContent = "Please enter your password.";
+            valid = false;
+        }
+
+    
+       if (valid) {
+         if (emailPhone === "admin" && password === "123") {
+        alert("Login Successful!");
+        window.location.href = "dashboard.html";
+    } 
+        else if (emailPhone === "user" && password === "123") {
+        alert("Login Successful!");
+        window.location.href = "userdash.html";
+    }
+        else {
+        alert("Incorrect Email/Phone or Password");
+    }
+}
+    });
+</script>
+
+</body>
+</html>
