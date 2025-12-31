@@ -178,9 +178,7 @@ $result = $conn->query($sql);
         </form>
     </div>
 
-    <div class="nav-item">Categories ▼</div>
-    <div class="nav-item">My List</div>
-    <div class="user-icon">👤</div>
+    <a href="usercate.php"><div class="nav-item">Categories</div></a>
 </div>
 
 <h1>📚 List Of Books</h1>
