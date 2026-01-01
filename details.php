@@ -1,13 +1,107 @@
 <?php
+session_start(); // To access $_SESSION for username
+
 $conn = new mysqli("localhost", "root", "", "library");
 if ($conn->connect_error)
     die("Connection Failed: " . $conn->connect_error);
+
+// -------------------- HANDLE BORROW / CANCEL REQUEST --------------------
+
+// -------------------- HANDLE BORROW REQUEST (FIXED) --------------------
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['book_id']) && !isset($_POST['comment'])) {
+
+    // Must be logged in
+    if (!isset($_SESSION['username'])) {
+        http_response_code(401);
+        exit;
+    }
+
+    $book_id = (int) $_POST['book_id'];
+    $username = $_SESSION['username'];
+
+    // Prevent race condition
+    $conn->query("START TRANSACTION");
+
+    // Lock book row
+    $book = $conn->query("SELECT copies FROM boooks WHERE id=$book_id FOR UPDATE")->fetch_assoc();
+
+    if (!$book || $book['copies'] <= 0) {
+        $conn->query("ROLLBACK");
+        exit;
+    }
+
+    // Check duplicate borrow
+    $exists = $conn->query("SELECT id FROM borrow_requests 
+                            WHERE book_id=$book_id AND username='$username'");
+
+    if ($exists->num_rows > 0) {
+        $conn->query("ROLLBACK");
+        exit;
+    }
+
+    // Insert borrow request
+    $conn->query("INSERT INTO borrow_requests (book_id, username, status)
+                  VALUES ($book_id, '$username', 'approved')");
+
+    // Decrease copies (SAFE)
+    $conn->query("
+    UPDATE boooks 
+    SET copies = CASE 
+        WHEN copies > 0 THEN copies - 1 
+        ELSE 0 
+    END
+    WHERE id = $book_id
+");
+
+
+    $conn->query("COMMIT");
+    exit;
+}
+
+// Cancel Borrow Request
+// -------------------- HANDLE CANCEL REQUEST (FIXED) --------------------
+if (isset($_GET['cancel_id']) && isset($_SESSION['username'])) {
+
+    $book_id = (int) $_GET['cancel_id'];
+    $username = $_SESSION['username'];
+
+    $conn->query("START TRANSACTION");
+
+    $request = $conn->query("SELECT id FROM borrow_requests 
+                             WHERE book_id=$book_id AND username='$username'")
+        ->fetch_assoc();
+
+    if ($request) {
+        $conn->query("DELETE FROM borrow_requests WHERE id=" . $request['id']);
+
+        // Restore copies safely
+        $conn->query("UPDATE boooks 
+                      SET copies = LEAST(copies + 1, total_copies) 
+                      WHERE id=$book_id");
+    }
+
+    $conn->query("COMMIT");
+    exit;
+}
+
+// -------------------- END OF BORROW / CANCEL LOGIC --------------------
 
 // Handle comment submission
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['comment'])) {
     $comment = $conn->real_escape_string($_POST['comment']);
     $book_id = (int) $_POST['book_id'];
-    $conn->query("INSERT INTO comments (book_id, comment) VALUES ($book_id, '$comment')");
+    $username = isset($_SESSION['username']) ? $_SESSION['username'] : 'Guest';
+    $conn->query("INSERT INTO comments (book_id, comment, username) VALUES ($book_id, '$comment', '$username')");
+}
+
+// Check if user has already requested this book
+$has_borrowed = false;
+if (isset($_SESSION['username']) && isset($_GET['id'])) {
+    $username = $_SESSION['username'];
+    $book_id_check = (int) $_GET['id'];
+    $check = $conn->query("SELECT * FROM borrow_requests WHERE book_id=$book_id_check AND username='$username'");
+    if ($check && $check->num_rows > 0)
+        $has_borrowed = true;
 }
 
 // Get book and recommended
@@ -24,7 +118,7 @@ function getRecommended($conn, $category, $exclude_id)
     $stmt = $conn->prepare(
         "SELECT id, title, author, cover 
          FROM boooks 
-         WHERE category = ? AND id != ?
+         WHERE category = ? AND id != ? 
          ORDER BY RAND() LIMIT 8"
     );
     $stmt->bind_param("si", $category, $exclude_id);
@@ -35,23 +129,60 @@ function getRecommended($conn, $category, $exclude_id)
 // AJAX loading for recommended books
 if (isset($_GET['ajax_id'])) {
     $book = getBook($conn, (int) $_GET['ajax_id']);
-    if ($book) {
-        $recommended = getRecommended($conn, $book['category'], $book['id']);
-        $comments_result = $conn->query("SELECT * FROM comments WHERE book_id = " . $book['id'] . " ORDER BY id DESC");
-        $comments = [];
-        while ($row = $comments_result->fetch_assoc())
-            $comments[] = $row;
-        echo json_encode(['book' => $book, 'recommended' => $recommended, 'comments' => $comments]);
-    } else {
-        echo json_encode(['error' => 'Book not found']);
+
+    if (!$book) {
+        echo json_encode(['error' => 'Book not found', 'copies' => 0]);
+        exit;
     }
+
+    $recommended = getRecommended($conn, $book['category'], $book['id']);
+
+    $comments_result = $conn->query("SELECT * FROM comments WHERE book_id = " . $book['id'] . " ORDER BY id DESC");
+    $comments = [];
+    while ($row = $comments_result->fetch_assoc())
+        $comments[] = $row;
+
+    $has_borrowed_ajax = false;
+    if (isset($_SESSION['username'])) {
+        $username = $_SESSION['username'];
+        $check = $conn->query("SELECT * FROM borrow_requests WHERE book_id={$book['id']} AND username='$username'");
+        if ($check && $check->num_rows > 0)
+            $has_borrowed_ajax = true;
+    }
+
+    echo json_encode([
+        'book' => $book,
+        'recommended' => $recommended,
+        'comments' => $comments,
+        'has_borrowed' => $has_borrowed_ajax,
+        'copies' => max(0, $book['copies']),
+        'logged_in' => isset($_SESSION['username'])
+    ]);
+
     exit;
 }
 
 $id = isset($_GET["id"]) ? (int) $_GET["id"] : 1;
 $book = getBook($conn, $id);
+
+// If book deleted, provide default
+if (!$book) {
+    $book = [
+        'id' => 0,
+        'title' => 'Book not found',
+        'author' => '',
+        'isbn' => '',
+        'category' => '',
+        'publisher' => '',
+        'cover' => 'default.png',
+        'description' => '',
+        'copies' => 0,
+        'total_copies' => 0
+    ];
+}
+
 $recommended = getRecommended($conn, $book['category'], $book['id']);
-$comments_result = $conn->query("SELECT * FROM comments WHERE book_id = " . $book['id'] . " ORDER BY id DESC");
+$comments_result = $conn->query("SELECT * FROM comments WHERE book_id = " . ($book['id'] ?? 0) . " ORDER BY id DESC");
 $comments = [];
 while ($row = $comments_result->fetch_assoc())
     $comments[] = $row;
@@ -63,6 +194,7 @@ while ($row = $comments_result->fetch_assoc())
 <head>
     <title><?php echo $book["title"]; ?></title>
     <style>
+        /* Your existing CSS unchanged */
         * {
             box-sizing: border-box;
         }
@@ -191,6 +323,15 @@ while ($row = $comments_result->fetch_assoc())
             background: #16a34a;
         }
 
+        .cancel-btn {
+            background: #ef4444 !important;
+        }
+
+        .out-of-stock {
+            background: #64748b !important;
+            cursor: default;
+        }
+
         .similar-panel {
             width: 300px;
             flex-shrink: 0;
@@ -317,8 +458,6 @@ while ($row = $comments_result->fetch_assoc())
             </form>
         </div>
         <div class="nav-item">Categories ▼</div>
-        <div class="nav-item">My List</div>
-        <div class="user-icon">👤</div>
     </div>
 
     <div class="container">
@@ -330,11 +469,27 @@ while ($row = $comments_result->fetch_assoc())
                 <p><strong>ISBN:</strong> <?php echo $book["isbn"]; ?></p>
                 <p><strong>Category:</strong> <?php echo $book["category"]; ?></p>
                 <p><strong>Publisher:</strong> <?php echo $book["publisher"]; ?></p>
-                <p><strong>Copies Available:</strong> <?php echo $book["copies"]; ?></p>
+                <p><strong>Copies Available:</strong>
+                    <span id="copies-count">
+                        <?php echo (int) $book['copies']; ?>
+                    </span>
+                </p>
+
+
                 <p><strong>Description:</strong><br><?php echo $book["description"]; ?></p>
-                <form action="" method="POST">
+
+                <form id="borrow-form" method="POST">
                     <input type="hidden" name="book_id" value="<?php echo $book["id"]; ?>" id="borrow-id">
-                    <button class="borrow-btn">Borrow Book</button>
+                    <?php if (!isset($_SESSION['username'])): ?>
+                        <button type="button" class="borrow-btn out-of-stock" disabled>Login to Borrow</button>
+                    <?php elseif ($book["copies"] <= 0): ?>
+                        <button type="button" class="borrow-btn out-of-stock" disabled>Out of Stock</button>
+                    <?php elseif ($has_borrowed): ?>
+                        <button type="button" class="borrow-btn cancel-btn">Cancel Request</button>
+                    <?php else: ?>
+                        <button type="button" class="borrow-btn request-btn">Borrow Book</button>
+                    <?php endif; ?>
+
                 </form>
             </div>
         </div>
@@ -344,15 +499,12 @@ while ($row = $comments_result->fetch_assoc())
             <?php foreach ($recommended as $r): ?>
                 <div class="similar-book" onclick="loadBook(<?php echo $r['id']; ?>)">
                     <img src="uploads/<?php echo $r['cover']; ?>">
-                    <div class="text">
-                        <?php echo $r['title']; ?><span><?php echo $r['author']; ?></span>
-                    </div>
+                    <div class="text"><?php echo $r['title']; ?><span><?php echo $r['author']; ?></span></div>
                 </div>
             <?php endforeach; ?>
         </div>
     </div>
 
-    <!-- COMMENTS SECTION -->
     <div class="comments-section">
         <h3>Comments</h3>
         <form id="comment-form">
@@ -365,20 +517,21 @@ while ($row = $comments_result->fetch_assoc())
                 <p style="color:#ccc;">No comments yet. Be the first to comment!</p>
             <?php else: ?>
                 <?php foreach ($comments as $c): ?>
-                    <div class="comment-box"><?php echo htmlspecialchars($c['comment']); ?></div>
+                    <div class="comment-box"><strong><?php echo htmlspecialchars($c['username']); ?>:</strong>
+                        <?php echo htmlspecialchars($c['comment']); ?></div>
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
     </div>
 
     <script>
-        // Load book and recommended dynamically
         function loadBook(id) {
             fetch('?ajax_id=' + id)
                 .then(res => res.json())
                 .then(data => {
                     if (data.error) return alert(data.error);
                     let book = data.book;
+                    let copies = data.copies; // ✅ actual copies from server
                     document.getElementById('book-cover').src = 'uploads/' + book.cover;
                     document.getElementById('book-info').innerHTML = `
             <h2>${book.title}</h2>
@@ -386,13 +539,29 @@ while ($row = $comments_result->fetch_assoc())
             <p><strong>ISBN:</strong> ${book.isbn}</p>
             <p><strong>Category:</strong> ${book.category}</p>
             <p><strong>Publisher:</strong> ${book.publisher}</p>
-            <p><strong>Copies Available:</strong> ${book.copies}</p>
+           <p><strong>Copies Available:</strong> 
+    <span id="copies-count">${copies}</span>
+</p>
+
             <p><strong>Description:</strong><br>${book.description}</p>
-            <form action="" method="POST">
+            <form id="borrow-form">
                 <input type="hidden" name="book_id" value="${book.id}" id="borrow-id">
-                <button class="borrow-btn">Borrow Book</button>
+               ${!data.logged_in
+                            ? '<button type="button" class="borrow-btn out-of-stock" disabled>Login to Borrow</button>'
+                            : (copies <= 0
+                                ? '<button type="button" class="borrow-btn out-of-stock" disabled>Out of Stock</button>'
+                                : (data.has_borrowed
+                                    ? '<button type="button" class="borrow-btn cancel-btn">Cancel Request</button>'
+                                    : '<button type="button" class="borrow-btn request-btn">Borrow Book</button>'
+                                )
+                            )
+                        }
+
             </form>
         `;
+                    bindBorrowButtons();
+
+                    // Recommended
                     let recHtml = '<h3>Recommended Books</h3>';
                     data.recommended.forEach(r => {
                         recHtml += `<div class="similar-book" onclick="loadBook(${r.id})">
@@ -402,22 +571,48 @@ while ($row = $comments_result->fetch_assoc())
                     });
                     document.getElementById('rec-panel').innerHTML = recHtml;
 
-                    // Update comments
+                    // Comments
                     let commentHtml = '';
                     if (data.comments.length === 0) commentHtml = '<p style="color:#ccc;">No comments yet. Be the first to comment!</p>';
-                    else data.comments.forEach(c => { commentHtml += `<div class="comment-box">${c.comment}</div>`; });
+                    else data.comments.forEach(c => { commentHtml += `<div class="comment-box"><strong>${c.username}:</strong> ${c.comment}</div>` });
                     document.getElementById('comments-list').innerHTML = commentHtml;
                 });
         }
 
-        // AJAX comment submission
         document.getElementById('comment-form').addEventListener('submit', function (e) {
             e.preventDefault();
             let formData = new FormData(this);
-            fetch('', { method: 'POST', body: formData }).then(() => loadBook(<?php echo $book['id']; ?>));
+            let currentBookId = document.querySelector('#borrow-id').value;
+            formData.set('book_id', currentBookId);
+            fetch('', { method: 'POST', body: formData })
+                .then(() => loadBook(currentBookId))
+                .catch(err => console.error(err));
             this.reset();
         });
+
+        function bindBorrowButtons() {
+            const borrowForm = document.getElementById('borrow-form');
+            if (!borrowForm) return;
+            const borrowBtn = borrowForm.querySelector('button');
+            if (!borrowBtn || borrowBtn.classList.contains('out-of-stock')) return;
+
+            borrowBtn.onclick = function () {
+                const bookId = document.querySelector('#borrow-id').value;
+                if (borrowBtn.classList.contains('request-btn')) {
+                    fetch('', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'book_id=' + bookId })
+                        .then(() => loadBook(bookId)) // ✅ reload book to get correct copies
+                        .catch(err => console.error(err));
+                } else if (borrowBtn.classList.contains('cancel-btn')) {
+                    fetch('?cancel_id=' + bookId)
+                        .then(() => loadBook(bookId)) // ✅ reload book after cancel
+                        .catch(err => console.error(err));
+                }
+            }
+        }
+
+        bindBorrowButtons();
     </script>
+
 </body>
 
 </html>
