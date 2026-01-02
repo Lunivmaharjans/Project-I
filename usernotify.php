@@ -1,27 +1,39 @@
 <?php
 session_start();
-if (!isset($_SESSION['username']))
+if (!isset($_SESSION['username'])) {
     die("Login required");
+}
 
 $username = $_SESSION['username'];
 $conn = new mysqli("localhost", "root", "", "library");
-if ($conn->connect_error)
-    die("DB Error");
-
-$today = date("Y-m-d");
-$result = $conn->query("SELECT * FROM borrow_requests WHERE username='$username' ORDER BY created_at DESC");
-
-// Calculate late fees if book is approved but overdue
-while ($row = $result->fetch_assoc()) {
-    if ($row['status'] === 'approved' && $row['return_date'] === NULL && $row['due_date'] < $today) {
-        $days_late = (strtotime($today) - strtotime($row['due_date'])) / (60 * 60 * 24);
-        $late_fee = $days_late * 2; // 2 currency units per day
-        $conn->query("UPDATE borrow_requests SET late_fee=$late_fee, status='late' WHERE id=" . $row['id']);
-    }
+if ($conn->connect_error) {
+    die("DB Error: " . $conn->connect_error);
 }
 
-// Fetch again after updates
-$result = $conn->query("SELECT * FROM borrow_requests WHERE username='$username' ORDER BY created_at DESC");
+$today = date("Y-m-d");
+
+/* ✅ FIX: Use correct table name and column names */
+$sql = "
+    SELECT br.*, b.title, b.cover
+    FROM borrow_requests br
+    JOIN boooks b ON br.book_id = b.id
+    WHERE br.username = ?
+    ORDER BY br.created_at DESC
+";
+
+/* Prepare statement */
+$stmt = $conn->prepare($sql);
+if (!$stmt) {
+    die("Prepare failed: " . $conn->error);
+}
+
+$stmt->bind_param("s", $username);
+
+if (!$stmt->execute()) {
+    die("Query failed: " . $stmt->error);
+}
+
+$result = $stmt->get_result();
 ?>
 
 <!DOCTYPE html>
@@ -29,8 +41,9 @@ $result = $conn->query("SELECT * FROM borrow_requests WHERE username='$username'
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User Notifications</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <style>
         body {
             margin: 0;
@@ -39,7 +52,6 @@ $result = $conn->query("SELECT * FROM borrow_requests WHERE username='$username'
             color: white;
         }
 
-        /* SIDEBAR */
         .sidebar {
             position: fixed;
             top: 0;
@@ -48,38 +60,31 @@ $result = $conn->query("SELECT * FROM borrow_requests WHERE username='$username'
             height: 100%;
             background: #1e293b;
             padding: 20px;
-            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
         }
 
         .sidebar h4 {
-            color: white;
-            font-size: 14px;
             margin-bottom: 20px;
-            letter-spacing: 0.5px;
         }
 
         .sidebar a {
             display: block;
             padding: 10px 0;
-            color: #fcf3f3ff;
+            color: #fff;
             text-decoration: none;
-            font-size: 15px;
-            transition: 0.2s;
         }
 
         .sidebar a:hover {
             color: #4169e1;
-            font-weight: 600;
+            font-weight: bold;
         }
 
-        .sidebar .logout {
-            margin-top: 30px;
+        .logout {
             color: red !important;
+            margin-top: 30px;
         }
 
-        /* MAIN CONTENT */
         .main {
-            margin-left: 220px; /* same as sidebar width */
+            margin-left: 220px;
             padding: 25px 40px;
         }
 
@@ -104,6 +109,10 @@ $result = $conn->query("SELECT * FROM borrow_requests WHERE username='$username'
             color: #facc15;
         }
 
+        .pending {
+            color: #facc15;
+        }
+
         .approved {
             color: #22c55e;
         }
@@ -116,18 +125,14 @@ $result = $conn->query("SELECT * FROM borrow_requests WHERE username='$username'
             color: #f87171;
         }
 
-        /* Responsive */
-        @media screen and (max-width: 768px) {
+        @media (max-width: 768px) {
             .sidebar {
                 position: relative;
                 width: 100%;
-                height: auto;
-                box-shadow: none;
             }
 
             .main {
                 margin-left: 0;
-                padding: 20px;
             }
         }
     </style>
@@ -135,7 +140,6 @@ $result = $conn->query("SELECT * FROM borrow_requests WHERE username='$username'
 
 <body>
 
-    <!-- SIDEBAR -->
     <div class="sidebar">
         <h4>NAVIGATION</h4>
         <a href="userdash.php">Dashboard</a>
@@ -146,42 +150,74 @@ $result = $conn->query("SELECT * FROM borrow_requests WHERE username='$username'
         <a class="logout" href="login.php">Logout</a>
     </div>
 
-    <!-- MAIN CONTENT -->
     <div class="main">
         <h2>📚 My Borrow Requests & Notifications</h2>
 
-        <table>
-            <tr>
-                <th>Book</th>
-                <th>Cover</th>
-                <th>Borrow Date</th>
-                <th>Due Date</th>
-                <th>Status</th>
-                <th>Late Fee</th>
-                <th>Days Left / Overdue</th>
-            </tr>
-
-            <?php while ($row = $result->fetch_assoc()): 
-                $days_info = '-';
-                if ($row['status'] === 'approved' && $row['due_date']) {
-                    $days_left = (strtotime($row['due_date']) - strtotime($today)) / (60 * 60 * 24);
-                    $days_info = ($days_left >= 0) ? ceil($days_left) . " day(s) left" : abs(floor($days_left)) . " day(s) overdue";
-                } elseif ($row['status'] === 'late' && $row['due_date']) {
-                    $days_late = (strtotime($today) - strtotime($row['due_date'])) / (60 * 60 * 24);
-                    $days_info = ceil($days_late) . " day(s) overdue";
-                }
-            ?>
+        <?php if ($result->num_rows > 0): ?>
+            <table>
                 <tr>
-                    <td><?php echo htmlspecialchars($row['book_title']); ?></td>
-                    <td><img src="uploads/<?php echo $row['book_cover']; ?>" width="50"></td>
-                    <td><?php echo $row['borrow_date'] ?? '-'; ?></td>
-                    <td><?php echo $row['due_date'] ?? '-'; ?></td>
-                    <td class="<?php echo $row['status']; ?>"><?php echo strtoupper($row['status']); ?></td>
-                    <td><?php echo $row['late_fee'] > 0 ? "Rs " . $row['late_fee'] : '-'; ?></td>
-                    <td><?php echo $days_info; ?></td>
+                    <th>Book Name</th>
+                    <th>Book Cover</th>
+                    <th>Borrow Date</th>
+                    <th>Due Date</th>
+                    <th>Status</th>
+                    <th>Late Fee</th>
+                    <th>Days Left / Overdue</th>
                 </tr>
-            <?php endwhile; ?>
-        </table>
+
+                <?php while ($row = $result->fetch_assoc()):
+
+                    $late_fee = '-';
+                    $days_info = '-';
+
+                    $status = 'PENDING';
+                    $status_class = 'pending';
+
+                    if (!empty($row['borrow_date']) || !empty($row['due_date'])) {
+                        $status = strtoupper($row['status']);
+                        $status_class = $row['status'];
+                    }
+
+                    if ($row['due_date'] && $row['status'] !== 'returned') {
+                        $diff = floor((strtotime($today) - strtotime($row['due_date'])) / 86400);
+
+                        if ($diff > 0) {
+                            $late_fee = "Rs " . ($diff * 2);
+                            $days_info = $diff . " day(s) overdue";
+                            $status = "LATE";
+                            $status_class = "late";
+                        } else {
+                            $days_info = abs($diff) . " day(s) left";
+                        }
+                    }
+                    ?>
+
+                    <tr>
+                        <td><?= htmlspecialchars($row['title']) ?></td>
+
+                        <td>
+                            <?php
+                            if (!empty($row['cover']) && file_exists("uploads/" . $row['cover'])) {
+                                echo '<img src="uploads/' . htmlspecialchars($row['cover']) . '" width="50">';
+                            } else {
+                                echo '-';
+                            }
+                            ?>
+                        </td>
+
+                        <td><?= $row['borrow_date'] ?? '-' ?></td>
+                        <td><?= $row['due_date'] ?? '-' ?></td>
+                        <td class="<?= $status_class ?>"><?= $status ?></td>
+                        <td><?= $late_fee ?></td>
+                        <td><?= $days_info ?></td>
+                    </tr>
+
+                <?php endwhile; ?>
+            </table>
+
+        <?php else: ?>
+            <p>No borrow requests or notifications found.</p>
+        <?php endif; ?>
     </div>
 
 </body>

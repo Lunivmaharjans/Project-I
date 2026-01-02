@@ -41,7 +41,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['book_id']) && !isset(
 
     // Insert borrow request
     $conn->query("INSERT INTO borrow_requests (book_id, username, status)
-                  VALUES ($book_id, '$username', 'approved')");
+                  VALUES ($book_id, '$username', 'pending')");
 
     // Decrease copies (SAFE)
     $conn->query("

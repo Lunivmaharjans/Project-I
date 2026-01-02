@@ -19,7 +19,6 @@ if (isset($_POST['action'], $_POST['request_id'], $_POST['book_id'])) {
     $action = $_POST['action'];
 
     if ($action === 'approve') {
-
         // reduce book copies only if > 0
         $conn->query("UPDATE boooks SET copies = copies - 1 WHERE id = $book_id AND copies > 0");
 
@@ -31,7 +30,6 @@ if (isset($_POST['action'], $_POST['request_id'], $_POST['book_id'])) {
         $stmt->execute();
 
     } elseif ($action === 'reject') {
-
         $stmt = $conn->prepare(
             "UPDATE borrow_requests SET status='rejected' WHERE id=?"
         );
@@ -42,11 +40,19 @@ if (isset($_POST['action'], $_POST['request_id'], $_POST['book_id'])) {
 
 /* 📥 FETCH BORROW REQUESTS */
 // We select username from borrow_requests table
-$result = $conn->query(
-    "SELECT id, book_id, book_title, book_cover, username, status 
-     FROM borrow_requests 
-     ORDER BY created_at DESC"
-);
+$result = $conn->query("
+    SELECT 
+        br.id,
+        br.book_id,
+        b.title AS book_title,
+        b.cover AS book_cover,
+        br.username,
+        br.status
+    FROM borrow_requests br
+    JOIN boooks b ON br.book_id = b.id
+    ORDER BY br.created_at DESC
+");
+
 ?>
 
 <!DOCTYPE html>
@@ -119,6 +125,12 @@ $result = $conn->query(
             background: #ef4444;
             color: white;
         }
+
+        .actions {
+            margin-left: auto;
+            display: flex;
+            gap: 10px;
+        }
     </style>
 </head>
 
@@ -141,14 +153,15 @@ $result = $conn->query(
                 </span>
             </div>
 
-            <?php if ($row['status'] === 'pending'): ?>
-                <form method="POST">
-                    <input type="hidden" name="request_id" value="<?php echo $row['id']; ?>">
-                    <input type="hidden" name="book_id" value="<?php echo $row['book_id']; ?>">
-                    <button name="action" value="approve" class="approve">Approve</button>
-                    <button name="action" value="reject" class="reject">Reject</button>
-                </form>
-            <?php endif; ?>
+        <?php if (in_array(strtolower($row['status']), ['pending','requested'])): ?>
+            <form method="POST" class="actions">
+                <input type="hidden" name="request_id" value="<?php echo $row['id']; ?>">
+                <input type="hidden" name="book_id" value="<?php echo $row['book_id']; ?>">
+                <button name="action" value="approve" class="approve">Approve</button>
+                <button name="action" value="reject" class="reject">Reject</button>
+            </form>
+        <?php endif; ?>
+
         </div>
     <?php endwhile; ?>
 

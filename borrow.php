@@ -43,17 +43,22 @@ if ($result->num_rows === 0) {
 
 $book = $result->fetch_assoc();
 
+// Make sure cover path is correct (adjust folder if needed)
+$book['cover'] = 'uploads/covers/' . $book['cover'];
+
 /* Insert borrow request */
 $borrow_days = 7;
 $borrow_date = date("Y-m-d");
 $due_date = date("Y-m-d", strtotime("+$borrow_days days"));
 $return_date = NULL;
+$status = "pending";
 
 $insert = $conn->prepare(
-    "INSERT INTO borrow_requests (username, book_id, book_title, book_cover, borrow_date, due_date, return_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO borrow_requests 
+    (username, book_id, book_title, book_cover, borrow_date, due_date, return_date, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 );
-$insert->bind_param("sisssss", $username, $book_id, $book['title'], $book['cover'], $borrow_date, $due_date, $return_date);
+$insert->bind_param("sissssss", $username, $book_id, $book['title'], $book['cover'], $borrow_date, $due_date, $return_date, $status);
 
 if ($insert->execute()) {
     // Decrease copies
@@ -66,7 +71,9 @@ if ($insert->execute()) {
         'username' => $username,
         'book_id' => $book_id,
         'book_title' => $book['title'],
-        'copies' => $copies
+        'book_cover' => $book['cover'],
+        'copies' => $copies,
+        'status' => $status
     ]);
 } else {
     echo json_encode(['error' => 'Something went wrong.']);

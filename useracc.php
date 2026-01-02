@@ -11,43 +11,59 @@ date_default_timezone_set("Asia/Kathmandu");
 
 /* DB */
 $conn = new mysqli("localhost", "root", "", "library");
-if ($conn->connect_error)
-    die("DB Error");
+if ($conn->connect_error) {
+    die("Database connection failed");
+}
 
-/* Upload library card (on image click) */
+/* Upload library card */
 if (isset($_POST['upload_card']) && isset($_FILES['library_card'])) {
     $dir = "uploads/cards/";
-    if (!is_dir($dir))
+    if (!is_dir($dir)) {
         mkdir($dir, 0777, true);
+    }
 
-    $fileName = time() . "_" . basename($_FILES["library_card"]["name"]);
-    if (move_uploaded_file($_FILES["library_card"]["tmp_name"], $dir . $fileName)) {
+    if ($_FILES['library_card']['error'] === 0) {
+        $fileName = time() . "_" . basename($_FILES["library_card"]["name"]);
+        move_uploaded_file($_FILES["library_card"]["tmp_name"], $dir . $fileName);
+
         $stmt = $conn->prepare("UPDATE users SET library_card_pic=? WHERE username=?");
         $stmt->bind_param("ss", $fileName, $username);
         $stmt->execute();
     }
 }
 
-/* Fetch user info */
+/* Fetch user info (SAFE) */
 $stmt = $conn->prepare(
     "SELECT username, email, phone, created_at, profile_pic, library_card_pic 
      FROM users WHERE username=?"
 );
 $stmt->bind_param("s", $username);
 $stmt->execute();
-$user = $stmt->get_result()->fetch_assoc();
+$result = $stmt->get_result();
+
+/* If user not found → logout */
+if ($result->num_rows === 0) {
+    session_destroy();
+    header("Location: login.php");
+    exit();
+}
+
+$user = $result->fetch_assoc();
 
 /* Values */
 $fullname = $user['username'];
 $email = $user['email'];
 $phone = $user['phone'];
 $member_since = $user['created_at'];
-$profilePic = $user['profile_pic'] ?? 'default.png';
-$libraryCardPic = $user['library_card_pic'] ?? 'card_default.png';
+$profilePic = !empty($user['profile_pic']) ? $user['profile_pic'] : 'default.png';
+$libraryCardPic = !empty($user['library_card_pic']) ? $user['library_card_pic'] : 'card_default.png';
 
 /* Greeting */
 $h = date("H");
-$greeting = ($h < 12) ? "Good Morning" : (($h < 17) ? "Good Afternoon" : (($h < 21) ? "Good Evening" : "Good Night"));
+$greeting =
+    ($h < 12) ? "Good Morning" :
+    (($h < 17) ? "Good Afternoon" :
+        (($h < 21) ? "Good Evening" : "Good Night"));
 ?>
 
 <!DOCTYPE html>
@@ -146,12 +162,12 @@ $greeting = ($h < 12) ? "Good Morning" : (($h < 17) ? "Good Afternoon" : (($h < 
             border: 2px dashed #2374e1;
             object-fit: cover;
             cursor: pointer;
-            transition: .3s;
+            transition: .3s
         }
 
         .card-img:hover {
             transform: scale(1.03);
-            box-shadow: 0 6px 15px rgba(0, 0, 0, .2);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, .2)
         }
     </style>
 </head>
@@ -179,10 +195,8 @@ $greeting = ($h < 12) ? "Good Morning" : (($h < 17) ? "Good Afternoon" : (($h < 
         <div class="account-info">
             <div class="profile-wrapper">
 
-                <!-- Profile Picture -->
                 <img src="uploads/<?= $profilePic ?>?t=<?= time() ?>" class="profile-img">
 
-                <!-- Library Card -->
                 <p style="margin-top:12px;font-weight:bold">Library Card</p>
 
                 <form method="POST" enctype="multipart/form-data" id="cardForm">
@@ -201,7 +215,6 @@ $greeting = ($h < 12) ? "Good Morning" : (($h < 17) ? "Good Afternoon" : (($h < 
             <p><b>Email:</b> <?= $email ?></p>
             <p><b>Phone:</b> <?= $phone ?></p>
             <p><b>Member Since:</b> <?= $member_since ?></p>
-
         </div>
     </div>
 
