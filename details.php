@@ -5,11 +5,13 @@ $conn = new mysqli("localhost", "root", "", "library");
 if ($conn->connect_error)
     die("Connection Failed: " . $conn->connect_error);
 
-// -------------------- HANDLE BORROW / CANCEL REQUEST --------------------
-
 // -------------------- HANDLE BORROW REQUEST (FIXED) --------------------
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['book_id']) && !isset($_POST['comment'])) {
-
+if (
+    $_SERVER["REQUEST_METHOD"] === "POST"
+    && isset($_POST['book_id'])
+    && !isset($_POST['comment'])
+    && !isset($_POST['reply_comment'])   // ✅ ADD THIS LINE
+) {
     // Must be logged in
     if (!isset($_SESSION['username'])) {
         http_response_code(401);
@@ -57,6 +59,33 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['book_id']) && !isset(
     $conn->query("COMMIT");
     exit;
 }
+// ================= ADD REPLY COMMENT =================
+if (
+    $_SERVER["REQUEST_METHOD"] === "POST"
+    && isset($_POST['reply_comment'], $_POST['parent_id'], $_POST['book_id'])
+) {
+
+    if (!isset($_SESSION['username'])) {
+        exit;
+    }
+
+    $reply = trim($_POST['reply_comment']);
+    $parent_id = (int) $_POST['parent_id'];
+    $book_id = (int) $_POST['book_id'];
+    $username = $_SESSION['username'];
+
+    if ($reply !== '') {
+        $stmt = $conn->prepare(
+            "INSERT INTO comments (book_id, comment, username, parent_id)
+             VALUES (?, ?, ?, ?)"
+        );
+        $stmt->bind_param("issi", $book_id, $reply, $username, $parent_id);
+        $stmt->execute();
+    }
+    exit;
+}
+
+
 
 // Cancel Borrow Request
 // -------------------- HANDLE CANCEL REQUEST (FIXED) --------------------
@@ -86,12 +115,25 @@ if (isset($_GET['cancel_id']) && isset($_SESSION['username'])) {
 
 // -------------------- END OF BORROW / CANCEL LOGIC --------------------
 
-// Handle comment submission
+// // Handle comment submission
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['comment'])) {
-    $comment = $conn->real_escape_string($_POST['comment']);
+
+    if (!isset($_SESSION['username']))
+        exit;
+
+    $comment = trim($_POST['comment']);
     $book_id = (int) $_POST['book_id'];
-    $username = isset($_SESSION['username']) ? $_SESSION['username'] : 'Guest';
-    $conn->query("INSERT INTO comments (book_id, comment, username) VALUES ($book_id, '$comment', '$username')");
+    $username = $_SESSION['username'];
+
+    if ($comment !== '') {
+        $stmt = $conn->prepare(
+            "INSERT INTO comments (book_id, comment, username, parent_id)
+             VALUES (?, ?, ?, 0)"
+        );
+        $stmt->bind_param("iss", $book_id, $comment, $username);
+        $stmt->execute();
+    }
+    exit;
 }
 
 // Check if user has already requested this book
@@ -137,10 +179,23 @@ if (isset($_GET['ajax_id'])) {
 
     $recommended = getRecommended($conn, $book['category'], $book['id']);
 
-    $comments_result = $conn->query("SELECT * FROM comments WHERE book_id = " . $book['id'] . " ORDER BY id DESC");
     $comments = [];
-    while ($row = $comments_result->fetch_assoc())
-        $comments[] = $row;
+    $replies = [];
+
+    $result = $conn->query("
+    SELECT * FROM comments 
+    WHERE book_id = " . ($book['id'] ?? 0) . "
+    ORDER BY id ASC
+");
+
+    while ($row = $result->fetch_assoc()) {
+        if ($row['parent_id'] == 0) {
+            $comments[] = $row;
+        } else {
+            $replies[$row['parent_id']][] = $row;
+        }
+    }
+
 
     $has_borrowed_ajax = false;
     if (isset($_SESSION['username'])) {
@@ -153,12 +208,11 @@ if (isset($_GET['ajax_id'])) {
     echo json_encode([
         'book' => $book,
         'recommended' => $recommended,
-        'comments' => $comments,
+        'comments' => $comments, // contains ALL comments now
         'has_borrowed' => $has_borrowed_ajax,
         'copies' => max(0, $book['copies']),
         'logged_in' => isset($_SESSION['username'])
     ]);
-
     exit;
 }
 
@@ -186,6 +240,27 @@ $comments_result = $conn->query("SELECT * FROM comments WHERE book_id = " . ($bo
 $comments = [];
 while ($row = $comments_result->fetch_assoc())
     $comments[] = $row;
+
+function timeAgo($datetime)
+{
+    $time = time() - strtotime($datetime);
+
+    if ($time < 60)
+        return "just now";
+    if ($time < 3600)
+        return floor($time / 60) . " min ago";
+    if ($time < 86400)
+        return floor($time / 3600) . " hour ago";
+    if ($time < 604800)
+        return floor($time / 86400) . " day ago";
+    if ($time < 2592000)
+        return floor($time / 604800) . " week ago";
+    if ($time < 31536000)
+        return floor($time / 2592000) . " month ago";
+
+    return floor($time / 31536000) . " year ago";
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -378,6 +453,76 @@ while ($row = $comments_result->fetch_assoc())
             margin-top: 3px;
         }
 
+        .comment {
+            display: flex;
+            gap: 12px;
+            background: #1b263b;
+            padding: 12px;
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+
+        .avatar {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            background: #334155;
+        }
+
+        .avatar.small {
+            width: 30px;
+            height: 30px;
+        }
+
+        .comment-body {
+            flex: 1;
+        }
+
+        .comment-header {
+            display: flex;
+            gap: 10px;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .username {
+            font-weight: bold;
+            color: #e5e7eb;
+        }
+
+        .time {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .comment-text {
+            font-size: 15px;
+            margin-bottom: 6px;
+        }
+
+        .comment-actions {
+            font-size: 13px;
+            color: #94a3b8;
+            display: flex;
+            gap: 12px;
+        }
+
+        .comment-actions a {
+            color: #94a3b8;
+        }
+
+        .reply {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            margin-left: 40px;
+        }
+
+        .reply-text {
+            font-size: 14px;
+        }
+
+
         .comments-section {
             width: 100%;
             max-width: 1100px;
@@ -497,10 +642,10 @@ while ($row = $comments_result->fetch_assoc())
         <div class="similar-panel" id="rec-panel">
             <h3>Recommended Books</h3>
             <?php foreach ($recommended as $r): ?>
-                <div class="similar-book" onclick="loadBook(<?php echo $r['id']; ?>)">
+                <a href="?id=<?php echo $r['id']; ?>" class="similar-book">
                     <img src="uploads/<?php echo $r['cover']; ?>">
                     <div class="text"><?php echo $r['title']; ?><span><?php echo $r['author']; ?></span></div>
-                </div>
+                </a>
             <?php endforeach; ?>
         </div>
     </div>
@@ -509,16 +654,54 @@ while ($row = $comments_result->fetch_assoc())
         <h3>Comments</h3>
         <form id="comment-form">
             <textarea name="comment" placeholder="Write your comment..." required></textarea>
-            <input type="hidden" name="book_id" value="<?php echo $book['id']; ?>">
             <button type="submit">Post Comment</button>
+            <input type="hidden" name="book_id" value="<?php echo $book['id']; ?>" id="comment-book-id">
         </form>
         <div id="comments-list">
             <?php if (count($comments) === 0): ?>
                 <p style="color:#ccc;">No comments yet. Be the first to comment!</p>
             <?php else: ?>
                 <?php foreach ($comments as $c): ?>
-                    <div class="comment-box"><strong><?php echo htmlspecialchars($c['username']); ?>:</strong>
-                        <?php echo htmlspecialchars($c['comment']); ?></div>
+                    <div class="comment">
+                        <img src="uploads/luniv_1767185994.jpg" class="avatar">
+
+                        <div class="comment-body">
+                            <div class="comment-header">
+                                <span class="username"><?= htmlspecialchars($c['username']) ?></span>
+                                <span class="time"><?= timeAgo($c['created_at']) ?></span>
+                            </div>
+
+                            <div class="comment-text">
+                                <?= htmlspecialchars($c['comment']) ?>
+                            </div>
+
+                            <div class="comment-actions">
+                                <span>👍</span>
+                                <span>👎</span>
+                                <a href="javascript:void(0)" onclick="showReplyForm(<?= $c['id'] ?>)">Reply</a>
+                            </div>
+
+                            <?php if (!empty($replies[$c['id']])): ?>
+                                <div class="replies">
+                                    <?php foreach ($replies[$c['id']] as $r): ?>
+                                        <div class="reply">
+                                            <span class="username"><?= htmlspecialchars($r['username']) ?></span>
+                                            <div class="reply-text"><?= htmlspecialchars($r['comment']) ?></div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <form class="reply-form" id="reply-form-<?= $c['id'] ?>" style="display:none;">
+                                <textarea name="reply_comment" required></textarea>
+                                <input type="hidden" name="parent_id" value="<?= $c['id'] ?>">
+                                <input type="hidden" name="book_id" value="<?= $book['id'] ?>">
+                                <button type="submit">Send</button>
+                            </form>
+
+                        </div>
+                    </div>
+
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
@@ -571,24 +754,103 @@ while ($row = $comments_result->fetch_assoc())
                     });
                     document.getElementById('rec-panel').innerHTML = recHtml;
 
-                    // Comments
+                    // Comments (NESTED)
                     let commentHtml = '';
-                    if (data.comments.length === 0) commentHtml = '<p style="color:#ccc;">No comments yet. Be the first to comment!</p>';
-                    else data.comments.forEach(c => { commentHtml += `<div class="comment-box"><strong>${c.username}:</strong> ${c.comment}</div>` });
+                    let repliesMap = {};
+
+                    data.comments.forEach(c => {
+                        if (c.parent_id != 0) {
+                            if (!repliesMap[c.parent_id]) repliesMap[c.parent_id] = [];
+                            repliesMap[c.parent_id].push(c);
+                        }
+                    });
+
+                    data.comments.forEach(c => {
+                        if (c.parent_id == 0) {
+                            commentHtml += `
+        <div class="comment">
+            <div class="comment-body">
+                <div class="comment-header">
+                    <span class="username">${c.username}</span>
+<span class="time">${timeAgo(c.created_at)}</span>
+                </div>
+
+                <div class="comment-text">${c.comment}</div>
+
+                <div class="comment-actions">
+                    <a href="javascript:void(0)" onclick="showReplyForm(${c.id})">Reply</a>
+                </div>
+
+                <form class="reply-form" id="reply-form-${c.id}" style="display:none;">
+                    <textarea name="reply_comment" required></textarea>
+                    <input type="hidden" name="parent_id" value="${c.id}">
+                    <input type="hidden" name="book_id" value="${data.book.id}">
+                    <button type="submit">Send</button>
+                </form>
+        `;
+
+                            if (repliesMap[c.id]) {
+                                repliesMap[c.id].forEach(r => {
+                                    commentHtml += `
+                <div class="reply">
+                    <span class="username">${r.username}</span>
+                    <div class="reply-text">${r.comment}</div>
+                </div>`;
+                                });
+                            }
+
+                            commentHtml += `
+            </div>
+        </div>`;
+                        }
+                    });
+
                     document.getElementById('comments-list').innerHTML = commentHtml;
+
                 });
         }
 
+        // Comment form
         document.getElementById('comment-form').addEventListener('submit', function (e) {
-            e.preventDefault();
+            e.preventDefault(); // stop form redirect
+
             let formData = new FormData(this);
-            let currentBookId = document.querySelector('#borrow-id').value;
-            formData.set('book_id', currentBookId);
-            fetch('', { method: 'POST', body: formData })
-                .then(() => loadBook(currentBookId))
+            // Use hidden input in comment form for correct book ID
+            let bookId = document.getElementById('comment-book-id').value;
+            formData.set('book_id', bookId);
+
+            fetch('', {
+                method: 'POST',
+                body: formData
+            })
+                .then(res => res.text())
+                .then(() => loadBook(bookId)) // reload book after comment
                 .catch(err => console.error(err));
+
             this.reset();
         });
+
+        // Reply form (dynamic)
+        document.addEventListener('submit', function (e) {
+            if (e.target.classList.contains('reply-form')) {
+                e.preventDefault();
+
+                let formData = new FormData(e.target);
+                // Use the comment form book ID, not borrow-id
+                let bookId = document.getElementById('comment-book-id').value;
+                formData.set('book_id', bookId);
+
+                fetch('', { method: 'POST', body: formData })
+                    .then(res => res.text())
+                    .then(() => loadBook(bookId))
+                    .catch(err => console.error(err));
+
+                e.target.reset();
+                e.target.style.display = 'none';
+            }
+        });
+
+
 
         function bindBorrowButtons() {
             const borrowForm = document.getElementById('borrow-form');
@@ -611,6 +873,22 @@ while ($row = $comments_result->fetch_assoc())
         }
 
         bindBorrowButtons();
+
+        function timeAgo($datetime) {
+            $time = time() - strtotime($datetime);
+
+            if ($time < 60) return "just now";
+            if ($time < 3600) return floor($time / 60). ' min'. (floor($time / 60) === 1 ? '' : 's'). ' ago';
+            if ($time < 86400) return floor($time / 3600). ' hour'. (floor($time / 3600) === 1 ? '' : 's'). ' ago';
+            if ($time < 604800) return floor($time / 86400). ' day'. (floor($time / 86400) === 1 ? '' : 's'). ' ago';
+            if ($time < 2592000) return floor($time / 604800). ' week'. (floor($time / 604800) === 1 ? '' : 's'). ' ago';
+            if ($time < 31536000) return floor($time / 2592000). ' month'. (floor($time / 2592000) === 1 ? '' : 's'). ' ago';
+
+            return floor($time / 31536000). ' year'. (floor($time / 31536000) === 1 ? '' : 's'). ' ago';
+        }
+
+
+
     </script>
 
 </body>
