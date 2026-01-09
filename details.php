@@ -1,22 +1,19 @@
 <?php
 session_start(); // To access $_SESSION for username
 
+
 $conn = new mysqli("localhost", "root", "", "library");
 if ($conn->connect_error)
     die("Connection Failed: " . $conn->connect_error);
+
 
 // -------------------- HANDLE BORROW REQUEST (FIXED) --------------------
 if (
     $_SERVER["REQUEST_METHOD"] === "POST"
     && isset($_POST['book_id'])
     && !isset($_POST['comment'])
-    && !isset($_POST['reply_comment'])   // ✅ ADD THIS LINE
+    && !isset($_POST['reply_comment'])
 ) {
-    // Must be logged in
-    if (!isset($_SESSION['username'])) {
-        http_response_code(401);
-        exit;
-    }
 
     $book_id = (int) $_POST['book_id'];
     $username = $_SESSION['username'];
@@ -57,7 +54,9 @@ if (
 
 
     $conn->query("COMMIT");
+    echo "borrowed";
     exit;
+
 }
 // ================= ADD REPLY COMMENT =================
 if (
@@ -66,8 +65,10 @@ if (
 ) {
 
     if (!isset($_SESSION['username'])) {
+        $conn->query("ROLLBACK");
         exit;
     }
+
 
     $reply = trim($_POST['reply_comment']);
     $parent_id = (int) $_POST['parent_id'];
@@ -110,7 +111,9 @@ if (isset($_GET['cancel_id']) && isset($_SESSION['username'])) {
     }
 
     $conn->query("COMMIT");
+    echo "cancelled";
     exit;
+
 }
 
 // -------------------- END OF BORROW / CANCEL LOGIC --------------------
@@ -841,7 +844,6 @@ function timeAgo($datetime)
                 formData.set('book_id', bookId);
 
                 fetch('', { method: 'POST', body: formData })
-                    .then(res => res.text())
                     .then(() => loadBook(bookId))
                     .catch(err => console.error(err));
 
@@ -861,33 +863,51 @@ function timeAgo($datetime)
             borrowBtn.onclick = function () {
                 const bookId = document.querySelector('#borrow-id').value;
                 if (borrowBtn.classList.contains('request-btn')) {
-                    fetch('', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'book_id=' + bookId })
-                        .then(() => loadBook(bookId)) // ✅ reload book to get correct copies
+                    fetch('', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        credentials: 'same-origin',
+                        body: 'book_id=' + encodeURIComponent(bookId)
+                    })
+                        .then(res => res.text())
+                        .then(response => {
+                            if (response === 'borrowed') {
+                                loadBook(bookId);
+                            }
+                        })
+
                         .catch(err => console.error(err));
+
                 } else if (borrowBtn.classList.contains('cancel-btn')) {
                     fetch('?cancel_id=' + bookId)
-                        .then(() => loadBook(bookId)) // ✅ reload book after cancel
+                        .then(res => res.text())
+                        .then(response => {
+                            if (response === 'cancelled') {
+                                loadBook(bookId);
+                            }
+                        })
                         .catch(err => console.error(err));
+
                 }
             }
         }
 
         bindBorrowButtons();
 
-        function timeAgo($datetime) {
-            $time = time() - strtotime($datetime);
+        function timeAgo(datetime) {
+            const seconds = Math.floor((Date.now() - new Date(datetime)) / 1000);
 
-            if ($time < 60) return "just now";
-            if ($time < 3600) return floor($time / 60). ' min'. (floor($time / 60) === 1 ? '' : 's'). ' ago';
-            if ($time < 86400) return floor($time / 3600). ' hour'. (floor($time / 3600) === 1 ? '' : 's'). ' ago';
-            if ($time < 604800) return floor($time / 86400). ' day'. (floor($time / 86400) === 1 ? '' : 's'). ' ago';
-            if ($time < 2592000) return floor($time / 604800). ' week'. (floor($time / 604800) === 1 ? '' : 's'). ' ago';
-            if ($time < 31536000) return floor($time / 2592000). ' month'. (floor($time / 2592000) === 1 ? '' : 's'). ' ago';
+            if (seconds < 60) return "just now";
+            if (seconds < 3600) return Math.floor(seconds / 60) + " min ago";
+            if (seconds < 86400) return Math.floor(seconds / 3600) + " hour ago";
+            if (seconds < 604800) return Math.floor(seconds / 86400) + " day ago";
+            if (seconds < 2592000) return Math.floor(seconds / 604800) + " week ago";
+            if (seconds < 31536000) return Math.floor(seconds / 2592000) + " month ago";
 
-            return floor($time / 31536000). ' year'. (floor($time / 31536000) === 1 ? '' : 's'). ' ago';
+            return Math.floor(seconds / 31536000) + " year ago";
         }
-
-
+        
+        body: 'action=borrow&book_id=' + bookId
 
     </script>
 

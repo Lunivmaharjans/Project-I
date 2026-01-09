@@ -169,14 +169,9 @@ $result = $stmt->get_result();
 
                     $late_fee = '-';
                     $days_info = '-';
+                    $status = strtoupper($row['status']);
+                    $status_class = strtolower($row['status']);
 
-                    $status = 'PENDING';
-                    $status_class = 'pending';
-
-                    if (!empty($row['borrow_date']) || !empty($row['due_date'])) {
-                        $status = strtoupper($row['status']);
-                        $status_class = $row['status'];
-                    }
 
                     if ($row['due_date'] && $row['status'] !== 'returned') {
                         $diff = floor((strtotime($today) - strtotime($row['due_date'])) / 86400);
