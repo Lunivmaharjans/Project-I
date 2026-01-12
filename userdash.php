@@ -23,6 +23,46 @@ $stmt->execute();
 $result = $stmt->get_result();
 $user = $result->fetch_assoc();
 
+// ================= CURRENTLY BORROWED BOOKS =================
+$borrowedBooks = [];
+
+$sql = "
+    SELECT 
+        book_title AS title,
+        'Unknown Author' AS author,
+        IFNULL(book_cover, 'default_book.png') AS cover_image,
+        DATEDIFF(due_date, CURDATE()) AS days_left
+    FROM borrow_requests
+    WHERE 
+        username = ?
+        AND status = 'approved'
+        AND return_date IS NULL
+    ORDER BY due_date ASC
+";
+
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("s", $username);
+$stmt->execute();
+$result = $stmt->get_result();
+
+while ($row = $result->fetch_assoc()) {
+    $borrowedBooks[] = $row;
+}
+
+/* ✅ NOW calculate */
+$borrowedCount = count($borrowedBooks);
+$overdueCount = 0;
+$dueSoonCount = 0;
+
+foreach ($borrowedBooks as $b) {
+    if ($b['days_left'] < 0) {
+        $overdueCount++;
+    } elseif ($b['days_left'] <= 3) {
+        $dueSoonCount++;
+    }
+}
+
+
 // Set default or DB profile picture
 $profilePic = $user['profile_pic'] ?? 'default.png';
 
@@ -329,15 +369,16 @@ if ($ampm === "AM") {
         <div class="stats-row">
             <div class="stat-card">
                 <h3>Books Borrowed</h3>
-                <div class="num">5</div>
+                <div class="num"><?php echo $borrowedCount; ?></div>
             </div>
             <div class="stat-card">
                 <h3>Overdue</h3>
-                <div class="num" style="color:red;">2</div>
+                <div class="num" style="color:red;"><?php echo $overdueCount; ?></div>
             </div>
             <div class="stat-card">
                 <h3>Due Soon</h3>
-                <div class="num" style="color:#e6b400;">3</div>
+                <div class="num" style="color:#e6b400;"><?php echo $dueSoonCount; ?></div>
+
             </div>
             <div class="stat-card">
                 <h3>Account Status</h3>
@@ -346,32 +387,44 @@ if ($ampm === "AM") {
         </div>
 
         <div class="section-title">📚 Currently Borrowed Books</div>
-        <div class="book-box">
-            <div class="book-item">
-                <img src="assets/gatsby.jpg" class="book-cover">
-                <div>
-                    <div class="book-title">The Great Gatsby</div>
-                    <div class="book-author">F. Scott Fitzgerald</div>
-                    <div class="days">12 days left</div>
-                </div>
-            </div>
-            <div class="book-item">
-                <img src="assets/kill_mockingbird.jpg" class="book-cover">
-                <div>
-                    <div class="book-title">To Kill a Mockingbird</div>
-                    <div class="book-author">Harper Lee</div>
-                    <div class="days">17 days left</div>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- JS TO SUBMIT PROFILE UPLOAD -->
-    <script>
-        document.getElementById('profileInput').addEventListener('change', function () {
-            document.getElementById('uploadForm').submit();
-        });
-    </script>
+        <div class="book-box">
+            <?php if (!empty($borrowedBooks)): ?>
+                <?php foreach ($borrowedBooks as $book): ?>
+                    <div class="book-item">
+                        <img src="uploads/<?php echo htmlspecialchars($book['cover_image'] ?? 'default_book.png'); ?>"
+                            class="book-cover">
+
+                        <div>
+                            <div class="book-title">
+                                <?php echo htmlspecialchars(trim($book['title']) ?: 'Untitled Book'); ?>
+                            </div>
+
+                            <div class="book-author">
+                                <?php echo htmlspecialchars($book['author'] ?: 'Unknown Author'); ?>
+                            </div>
+
+
+                            <div class="days">
+                                <?php echo (int) $book['days_left']; ?> days left
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <p style="color:#777;font-size:14px;">
+                    You dont have any books borrowed.
+                </p>
+            <?php endif; ?>
+        </div>
+
+
+        <!-- JS TO SUBMIT PROFILE UPLOAD -->
+        <script>
+            document.getElementById('profileInput').addEventListener('change', function () {
+                document.getElementById('uploadForm').submit();
+            });
+        </script>
 
 </body>
 

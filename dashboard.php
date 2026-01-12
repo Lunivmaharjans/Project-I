@@ -187,6 +187,7 @@
         <a href="add.php" class="op-button">➕ Add Books</a>
         <a href="issue.php" class="op-button">📤 Issue Book</a>
         <a href="renew.php" class="op-button">🔄 Renew Book</a>
+        <a href="upbook.php" class="op-button">📕 Update Books</a>
       </div>
     </div>
   </div>

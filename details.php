@@ -86,8 +86,6 @@ if (
     exit;
 }
 
-
-
 // Cancel Borrow Request
 // -------------------- HANDLE CANCEL REQUEST (FIXED) --------------------
 if (isset($_GET['cancel_id']) && isset($_SESSION['username'])) {
@@ -102,18 +100,18 @@ if (isset($_GET['cancel_id']) && isset($_SESSION['username'])) {
         ->fetch_assoc();
 
     if ($request) {
+        // Delete the borrow request
         $conn->query("DELETE FROM borrow_requests WHERE id=" . $request['id']);
 
-        // Restore copies safely
+        // Increase copies by 1, but not exceeding total_copies
         $conn->query("UPDATE boooks 
-                      SET copies = LEAST(copies + 1, total_copies) 
-                      WHERE id=$book_id");
+                      SET copies = copies + 1 
+                      WHERE id=$book_id AND copies < total_copies");
     }
 
     $conn->query("COMMIT");
     echo "cancelled";
     exit;
-
 }
 
 // -------------------- END OF BORROW / CANCEL LOGIC --------------------
