@@ -186,7 +186,7 @@ function previewImage(event) {
 <div class="sidebar">
     <h2>📚 Livo</h2>
 
-    <a href="dashboard.html">Dashboard</a>
+    <a href="dashboard.php">Dashboard</a>
     <a href="add.php">Manage Books</a>
     <a href="#">Return Books</a>
     <a href="#">Borrowings</a>

@@ -28,7 +28,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         if ($emailPhone === "admin" && $password === "123") {
             $_SESSION["username"] = "admin";
             $_SESSION["role"]     = "admin";
-            header("Location: dashboard.html");
+            header("Location: dashboard.php");
             exit();
         }
 
