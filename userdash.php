@@ -29,8 +29,8 @@ $borrowedBooks = [];
 $sql = "
     SELECT 
         book_title AS title,
-        'Unknown Author' AS author,
-        IFNULL(book_cover, 'default_book.png') AS cover_image,
+        book_author AS author,
+        book_cover AS cover_image,
         DATEDIFF(due_date, CURDATE()) AS days_left
     FROM borrow_requests
     WHERE 
@@ -392,8 +392,18 @@ if ($ampm === "AM") {
             <?php if (!empty($borrowedBooks)): ?>
                 <?php foreach ($borrowedBooks as $book): ?>
                     <div class="book-item">
-                        <img src="uploads/<?php echo htmlspecialchars($book['cover_image'] ?? 'default_book.png'); ?>"
-                            class="book-cover">
+                        <?php
+                        // Correct way to get book cover
+                        $coverFile = !empty($book['cover_image']) ? $book['cover_image'] : 'default-book.png';
+                        $coverPath = 'uploads/' . $coverFile;
+
+                        // Optional: fallback if file is missing
+                        if (!file_exists($coverPath)) {
+                            $coverPath = 'uploads/default-book.png';
+                        }
+                        ?>
+
+                        <img src="<?php echo htmlspecialchars($coverPath); ?>" class="book-cover">
 
                         <div>
                             <div class="book-title">
@@ -404,7 +414,6 @@ if ($ampm === "AM") {
                                 <?php echo htmlspecialchars($book['author'] ?: 'Unknown Author'); ?>
                             </div>
 
-
                             <div class="days">
                                 <?php echo (int) $book['days_left']; ?> days left
                             </div>
@@ -413,10 +422,11 @@ if ($ampm === "AM") {
                 <?php endforeach; ?>
             <?php else: ?>
                 <p style="color:#777;font-size:14px;">
-                    You dont have any books borrowed.
+                    You don't have any books borrowed.
                 </p>
             <?php endif; ?>
         </div>
+
 
 
         <!-- JS TO SUBMIT PROFILE UPLOAD -->

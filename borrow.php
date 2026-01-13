@@ -30,8 +30,8 @@ if ($check->num_rows > 0) {
     exit();
 }
 
-/* Get book info */
-$stmt = $conn->prepare("SELECT title, cover, copies FROM boooks WHERE id=?");
+/* Get book info including author */
+$stmt = $conn->prepare("SELECT title, author, cover, copies FROM boooks WHERE id=?");
 $stmt->bind_param("i", $book_id);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -46,7 +46,7 @@ $book = $result->fetch_assoc();
 // Make sure cover path is correct (adjust folder if needed)
 $book['cover'] = 'uploads/covers/' . $book['cover'];
 
-/* Insert borrow request */
+/* Insert borrow request including author */
 $borrow_days = 7;
 $borrow_date = date("Y-m-d");
 $due_date = date("Y-m-d", strtotime("+$borrow_days days"));
@@ -55,10 +55,21 @@ $status = "pending";
 
 $insert = $conn->prepare(
     "INSERT INTO borrow_requests 
-    (username, book_id, book_title, book_cover, borrow_date, due_date, return_date, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    (username, book_id, book_title, book_author, book_cover, borrow_date, due_date, return_date, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
 );
-$insert->bind_param("sissssss", $username, $book_id, $book['title'], $book['cover'], $borrow_date, $due_date, $return_date, $status);
+$insert->bind_param(
+    "sisssssss",
+    $username,
+    $book_id,
+    $book['title'],
+    $book['author'],    // <-- Author added
+    $book['cover'],
+    $borrow_date,
+    $due_date,
+    $return_date,
+    $status
+);
 
 if ($insert->execute()) {
     // Decrease copies
@@ -71,6 +82,7 @@ if ($insert->execute()) {
         'username' => $username,
         'book_id' => $book_id,
         'book_title' => $book['title'],
+        'book_author' => $book['author'],  // <-- Added here
         'book_cover' => $book['cover'],
         'copies' => $copies,
         'status' => $status

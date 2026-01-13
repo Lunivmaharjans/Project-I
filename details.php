@@ -6,8 +6,7 @@ $conn = new mysqli("localhost", "root", "", "library");
 if ($conn->connect_error)
     die("Connection Failed: " . $conn->connect_error);
 
-
-// -------------------- HANDLE BORROW REQUEST (FIXED) --------------------
+// -------------------- HANDLE BORROW REQUEST --------------------
 if (
     $_SERVER["REQUEST_METHOD"] === "POST"
     && isset($_POST['book_id'])
@@ -15,49 +14,70 @@ if (
     && !isset($_POST['reply_comment'])
 ) {
 
+    if (!isset($_SESSION['username'])) {
+        exit;
+    }
+
     $book_id = (int) $_POST['book_id'];
     $username = $_SESSION['username'];
 
-    // Prevent race condition
+    // Start transaction for safety
     $conn->query("START TRANSACTION");
 
-    // Lock book row
-    $book = $conn->query("SELECT copies FROM boooks WHERE id=$book_id FOR UPDATE")->fetch_assoc();
+    // Lock book row to prevent race conditions
+    $book_row = $conn->query("SELECT title, author, cover, copies FROM boooks WHERE id=$book_id FOR UPDATE")->fetch_assoc();
 
-    if (!$book || $book['copies'] <= 0) {
+    if (!$book_row || $book_row['copies'] <= 0) {
         $conn->query("ROLLBACK");
-        exit;
+        exit('out_of_stock');
     }
 
-    // Check duplicate borrow
+    // Check if already requested
     $exists = $conn->query("SELECT id FROM borrow_requests 
-                            WHERE book_id=$book_id AND username='$username'");
-
+                            WHERE book_id=$book_id AND username='$username' AND status='pending'");
     if ($exists->num_rows > 0) {
         $conn->query("ROLLBACK");
-        exit;
+        exit('already_requested');
     }
 
-    // Insert borrow request
-    $conn->query("INSERT INTO borrow_requests (book_id, username, status)
-                  VALUES ($book_id, '$username', 'pending')");
+    // Prepare cover path
+    $cover_path = 'uploads/covers/' . $book_row['cover'];
 
-    // Decrease copies (SAFE)
-    $conn->query("
-    UPDATE boooks 
-    SET copies = CASE 
-        WHEN copies > 0 THEN copies - 1 
-        ELSE 0 
-    END
-    WHERE id = $book_id
-");
+    // Insert borrow request with title, author, and cover
+    $stmt = $conn->prepare("
+        INSERT INTO borrow_requests 
+        (username, book_id, book_title, book_author, book_cover, borrow_date, due_date, status) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ");
 
+    $borrow_days = 7;
+    $borrow_date = date("Y-m-d");
+    $due_date = date("Y-m-d", strtotime("+$borrow_days days"));
+    $status = "pending";
 
-    $conn->query("COMMIT");
-    echo "borrowed";
-    exit;
+    $stmt->bind_param(
+        "sissssss",
+        $username,
+        $book_id,
+        $book_row['title'],
+        $book_row['author'],
+        $cover_path,
+        $borrow_date,
+        $due_date,
+        $status
+    );
 
+    if ($stmt->execute()) {
+        // Decrease copies
+        $conn->query("UPDATE boooks SET copies = copies - 1 WHERE id=$book_id");
+        $conn->query("COMMIT");
+        exit('borrowed');
+    } else {
+        $conn->query("ROLLBACK");
+        exit('error');
+    }
 }
+
 // ================= ADD REPLY COMMENT =================
 if (
     $_SERVER["REQUEST_METHOD"] === "POST"
@@ -904,7 +924,7 @@ function timeAgo($datetime)
 
             return Math.floor(seconds / 31536000) + " year ago";
         }
-        
+
         body: 'action=borrow&book_id=' + bookId
 
     </script>
