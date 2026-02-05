@@ -356,7 +356,6 @@ if ($ampm === "AM") {
         <h4>NAVIGATION</h4>
         <a href="userdash.php">Dashboard</a>
         <a href="View.php">View Books</a>
-        <a href="usercate.php">Categories</a>
         <a href="usernotify.php">Notifications</a>
         <a href="useracc.php">My Account</a>
         <a class="logout" href="login.php">Logout</a>
@@ -393,18 +392,18 @@ if ($ampm === "AM") {
                 <?php foreach ($borrowedBooks as $book): ?>
                     <div class="book-item">
                         <?php
-                        // Correct way to get book cover
-                        $coverFile = !empty($book['cover_image']) ? $book['cover_image'] : 'default-book.png';
-                        $coverPath = 'uploads/' . $coverFile;
+                        // cover_image comes directly from DB (already full path)
+                        $coverPath = !empty($book['cover_image'])
+                            ? $book['cover_image']
+                            : 'uploads/default-book.png';
 
-                        // Optional: fallback if file is missing
+                        // safety fallback if file missing
                         if (!file_exists($coverPath)) {
                             $coverPath = 'uploads/default-book.png';
                         }
                         ?>
 
                         <img src="<?php echo htmlspecialchars($coverPath); ?>" class="book-cover">
-
                         <div>
                             <div class="book-title">
                                 <?php echo htmlspecialchars(trim($book['title']) ?: 'Untitled Book'); ?>
@@ -429,7 +428,7 @@ if ($ampm === "AM") {
 
 
 
-        <!-- JS TO SUBMIT PROFILE UPLOAD -->
+        <!--   J S TO SUBMIT PROFILE UPLOAD -->
         <script>
             document.getElementById('profileInput').addEventListener('change', function () {
                 document.getElementById('uploadForm').submit();

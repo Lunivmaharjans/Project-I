@@ -153,7 +153,7 @@
     <a href="#">Manage Books</a>
     <a href="#">Return Books</a>
     <a href="#">Borrowings</a>
-    <a href="#">State Users </a>
+    <a href="view.php">View Boooks </a>
     <a href="#">Overdue Books</a>
 
     <h4>Settings</h4>

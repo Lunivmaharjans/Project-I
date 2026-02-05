@@ -185,7 +185,7 @@ $greeting =
     <div class="sidebar">
         <a href="userdash.php">Dashboard</a>
         <a href="View.php">View Books</a>
-        <a href="usercate.php">Categories</a>
+        <a href="usernotify.php">Notifications</a>
         <a href="useracc.php">My Account</a>
     </div>
 
