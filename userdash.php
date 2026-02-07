@@ -426,8 +426,6 @@ if ($ampm === "AM") {
             <?php endif; ?>
         </div>
 
-
-
         <!--   J S TO SUBMIT PROFILE UPLOAD -->
         <script>
             document.getElementById('profileInput').addEventListener('change', function () {
