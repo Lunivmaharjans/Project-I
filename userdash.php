@@ -25,10 +25,11 @@ $result = $stmt->get_result();
 $user = $result->fetch_assoc();
 
 // ------------------ HANDLE RETURN BOOK ------------------
-if (isset($_POST['return_book'], $_POST['username'], $_POST['book_title'])) {
+if (isset($_POST['return_book'], $_POST['username'], $_POST['book_title'], $_POST['book_cover'])) {
 
     $bookTitle = $_POST['book_title'];
     $usernameForm = $_POST['username'];
+    $bookCover = $_POST['book_cover'];
 
     // Update borrow_requests
     $stmt = $conn->prepare("
@@ -43,10 +44,11 @@ if (isset($_POST['return_book'], $_POST['username'], $_POST['book_title'])) {
 
     // Insert notification
     $notify = $conn->prepare("
-        INSERT INTO return_notifications (username, book_title)
-        VALUES (?, ?)
+    INSERT INTO return_notifications (username, book_title, book_cover)
+    VALUES (?, ?, ?)
     ");
-    $notify->bind_param("ss", $usernameForm, $bookTitle);
+$notify->bind_param("sss", $usernameForm, $bookTitle, $bookCover);
+
     $notify->execute();
     $notify->close();
 
@@ -452,10 +454,10 @@ if ($ampm === "AM") {
                     <?php
                     $coverPath = !empty($book['cover_image'])
                         ? $book['cover_image']
-                        : 'uploads/default-book.png';
+                        : 'uploads/default.png';
 
                     if (!file_exists($coverPath)) {
-                        $coverPath = 'uploads/default-book.png';
+                        $coverPath = 'uploads/default.png';
                     }
                     ?>
 
@@ -479,6 +481,7 @@ if ($ampm === "AM") {
                     <form method="POST" class="return-form">
                         <input type="hidden" name="book_title" value="<?php echo htmlspecialchars($book['title']); ?>">
                         <input type="hidden" name="username" value="<?php echo htmlspecialchars($username); ?>">
+                        <input type="hidden" name="book_cover" value="<?php echo htmlspecialchars($book['cover_image']); ?>">    
                         <input type="hidden" name="return_book" value="1">
                         <button type="submit" class="return-btn">Return</button>
                     </form>
