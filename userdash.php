@@ -15,6 +15,7 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
+
 // Fetch user info from DB
 $sql = "SELECT profile_pic FROM users WHERE username=?";
 $stmt = $conn->prepare($sql);
@@ -22,6 +23,37 @@ $stmt->bind_param("s", $username);
 $stmt->execute();
 $result = $stmt->get_result();
 $user = $result->fetch_assoc();
+
+// ------------------ HANDLE RETURN BOOK ------------------
+if (isset($_POST['return_book'], $_POST['username'], $_POST['book_title'])) {
+
+    $bookTitle = $_POST['book_title'];
+    $usernameForm = $_POST['username'];
+
+    // Update borrow_requests
+    $stmt = $conn->prepare("
+        UPDATE borrow_requests 
+        SET return_status='pending'
+        WHERE username=? AND book_title=? 
+        AND status='approved' AND return_status IS NULL
+    ");
+    $stmt->bind_param("ss", $usernameForm, $bookTitle);
+    $stmt->execute();
+    $stmt->close();
+
+    // Insert notification
+    $notify = $conn->prepare("
+        INSERT INTO return_notifications (username, book_title)
+        VALUES (?, ?)
+    ");
+    $notify->bind_param("ss", $usernameForm, $bookTitle);
+    $notify->execute();
+    $notify->close();
+
+    echo "success";
+    exit(); // important for AJAX
+}
+
 
 // ================= CURRENTLY BORROWED BOOKS =================
 $borrowedBooks = [];
@@ -297,6 +329,8 @@ if ($ampm === "AM") {
 
         .book-item {
             display: flex;
+            align-items: center;
+            width: 100%;
             padding: 14px 0;
             border-bottom: 1px solid #eee;
         }
@@ -326,6 +360,31 @@ if ($ampm === "AM") {
             color: #4169e1;
             margin-top: 5px;
             display: inline-block;
+        }
+
+        .return-btn {
+            padding: 8px 16px;
+            background-color: #4169e1;
+            /* Royal Blue */
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: 0.3s;
+            margin-left: 15px;
+        }
+
+        .return-btn:hover {
+            background-color: #3653b3;
+            /* Darker blue on hover */
+        }
+
+        .return-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+            color: #666;
         }
     </style>
 </head>
@@ -388,22 +447,21 @@ if ($ampm === "AM") {
         <div class="section-title">📚 Currently Borrowed Books</div>
 
         <div class="book-box">
-            <?php if (!empty($borrowedBooks)): ?>
-                <?php foreach ($borrowedBooks as $book): ?>
-                    <div class="book-item">
-                        <?php
-                        // cover_image comes directly from DB (already full path)
-                        $coverPath = !empty($book['cover_image'])
-                            ? $book['cover_image']
-                            : 'uploads/default-book.png';
+            <?php foreach ($borrowedBooks as $book): ?>
+                <div class="book-item">
+                    <?php
+                    $coverPath = !empty($book['cover_image'])
+                        ? $book['cover_image']
+                        : 'uploads/default-book.png';
 
-                        // safety fallback if file missing
-                        if (!file_exists($coverPath)) {
-                            $coverPath = 'uploads/default-book.png';
-                        }
-                        ?>
+                    if (!file_exists($coverPath)) {
+                        $coverPath = 'uploads/default-book.png';
+                    }
+                    ?>
 
+                    <div style="display:flex; align-items:center;">
                         <img src="<?php echo htmlspecialchars($coverPath); ?>" class="book-cover">
+
                         <div>
                             <div class="book-title">
                                 <?php echo htmlspecialchars(trim($book['title']) ?: 'Untitled Book'); ?>
@@ -418,18 +476,39 @@ if ($ampm === "AM") {
                             </div>
                         </div>
                     </div>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <p style="color:#777;font-size:14px;">
-                    You don't have any books borrowed.
-                </p>
-            <?php endif; ?>
-        </div>
+                    <form method="POST" class="return-form">
+                        <input type="hidden" name="book_title" value="<?php echo htmlspecialchars($book['title']); ?>">
+                        <input type="hidden" name="username" value="<?php echo htmlspecialchars($username); ?>">
+                        <input type="hidden" name="return_book" value="1">
+                        <button type="submit" class="return-btn">Return</button>
+                    </form>
+                </div>
+            <?php endforeach; ?>
 
-        <!--   J S TO SUBMIT PROFILE UPLOAD -->
+        </div>
         <script>
-            document.getElementById('profileInput').addEventListener('change', function () {
-                document.getElementById('uploadForm').submit();
+            document.querySelectorAll('.return-form').forEach(form => {
+                form.addEventListener('submit', function (e) {
+                    e.preventDefault();
+
+                    const formData = new FormData(this);
+
+                    fetch('userdash.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                        .then(res => res.text())
+                        .then(data => {
+                            if (data.trim() === "success") {
+                                alert("Return request sent successfully!");
+                                this.querySelector('.return-btn').disabled = true;
+                                this.querySelector('.return-btn').innerText = "Requested";
+                            }
+                        })
+                        .catch(err => {
+                            alert("Something went wrong.");
+                        });
+                });
             });
         </script>
 

@@ -24,8 +24,8 @@ $yearly_overdue = 120;
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Library Report</title>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -33,74 +33,110 @@ $yearly_overdue = 120;
     <style>
         body {
             margin: 0;
-            font-family: "Segoe UI", sans-serif;
-            background: #f5f7fb;
+            font-family: 'Segoe UI', sans-serif;
+            background: #f9f9f9;
         }
 
+        /* Sidebar */
         .sidebar {
-            width: 230px;
-            background: #fff;
+            width: 240px;
             height: 100vh;
+            background: #ffffff;
             position: fixed;
-            padding: 25px 20px;
-            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.08);
+            padding: 25px;
+            border-right: 1px solid #e5e5e5;
         }
 
         .sidebar h2 {
-            font-size: 20px;
-            margin-bottom: 30px;
+            margin-bottom: 35px;
+            font-weight: 600;
         }
 
         .sidebar a {
             display: block;
-            padding: 12px 15px;
-            margin: 6px 0;
+            padding: 12px;
+            margin-bottom: 8px;
             color: #333;
             text-decoration: none;
             border-radius: 8px;
+            transition: 0.2s;
         }
 
         .sidebar a:hover {
-            background: #eef2ff;
-            color: #3b5bff;
+            background: #f1f1f1;
         }
 
+        /* Main */
         .main {
-            margin-left: 250px;
-            padding: 30px;
+            margin-left: 260px;
+            padding: 40px;
         }
 
         .title {
-            font-size: 26px;
+            font-size: 28px;
             font-weight: 600;
-            margin-bottom: 15px;
-        }
-
-        select {
-            padding: 8px 12px;
-            font-size: 15px;
-            border-radius: 6px;
             margin-bottom: 25px;
         }
 
-        .chart-card {
-            background: #fff;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-            text-align: center;
-            max-width: 450px;
+        /* Dropdown */
+        select {
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            font-size: 15px;
+            margin-bottom: 30px;
         }
 
-        canvas {
-            max-width: 100%;
+        /* 2-column layout */
+        .report-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+        }
+
+        .chart-card,
+        .analysis-card {
+            background: white;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        /* Pie chart */
+        .chart-card {
+            flex: 1 1 400px;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        /* Analysis card */
+        .analysis-card {
+            flex: 1 1 300px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        /* Analysis Styling */
+        .stat {
+            margin: 10px 0;
+            font-size: 15px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            margin-top: 15px;
+            text-align: center;
         }
     </style>
 </head>
 
 <body>
 
-    <!-- Sidebar -->
     <div class="sidebar">
         <h2>📚 Livo</h2>
         <a href="dashboard.php">Dashboard</a>
@@ -108,14 +144,11 @@ $yearly_overdue = 120;
         <a href="issue.php">Issue Book</a>
         <a href="renew.php">Renew Book</a>
         <a href="update.php">Update Books</a>
-        <a href="report.php">Reports</a>
     </div>
 
-    <!-- Main -->
     <div class="main">
         <div class="title">📊 Library Book Report</div>
 
-        <!-- SELECT OPTION -->
         <select id="reportType" onchange="changeReport()">
             <option value="daily">Today</option>
             <option value="weekly" selected>Weekly</option>
@@ -123,9 +156,21 @@ $yearly_overdue = 120;
             <option value="yearly">Yearly</option>
         </select>
 
-        <!-- Chart -->
-        <div class="chart-card">
-            <canvas id="reportChart"></canvas>
+        <div class="report-container">
+            <!-- Pie Chart -->
+            <div class="chart-card">
+                <canvas id="reportChart"></canvas>
+            </div>
+
+            <!-- Analysis -->
+            <div class="analysis-card">
+                <h3 id="analysisTitle">Weekly Analysis</h3>
+                <div class="stat"><strong>Total Returns:</strong> <span id="totalReturn"></span></div>
+                <div class="stat" style="color:#4CAF50;">On Time: <span id="onTimeVal"></span></div>
+                <div class="stat" style="color:#FFC107;">Late: <span id="lateVal"></span></div>
+                <div class="stat" style="color:#F44336;">Overdue: <span id="overdueVal"></span></div>
+                <div id="performanceContainer"></div>
+            </div>
         </div>
     </div>
 
@@ -148,49 +193,70 @@ $yearly_overdue = 120;
                     plugins: {
                         title: {
                             display: true,
-                            text: title
+                            text: title,
+                            font: { size: 18 }
                         },
-                        legend: {
-                            position: "bottom"
-                        }
+                        legend: { position: "bottom" }
                     }
                 }
             });
+        }
+
+        function updateAnalysis(onTime, late, overdue, title) {
+
+            const total = onTime + late + overdue;
+            const onTimePercent = ((onTime / total) * 100).toFixed(1);
+
+            let performanceText;
+            let badgeColor;
+
+            if (onTimePercent >= 70) {
+                performanceText = "Excellent Performance";
+                badgeColor = "#4CAF50";
+            } else if (onTimePercent >= 50) {
+                performanceText = "Average Performance";
+                badgeColor = "#FFC107";
+            } else {
+                performanceText = "Needs Improvement";
+                badgeColor = "#F44336";
+            }
+
+            document.getElementById("analysisTitle").innerText = title + " Analysis";
+            document.getElementById("totalReturn").innerText = total;
+            document.getElementById("onTimeVal").innerText = onTime + " (" + onTimePercent + "%)";
+            document.getElementById("lateVal").innerText = late;
+            document.getElementById("overdueVal").innerText = overdue;
+
+            document.getElementById("performanceContainer").innerHTML =
+                `<div class="badge" style="background:${badgeColor}; color:white;">
+            ${performanceText}
+         </div>`;
         }
 
         function changeReport() {
             const type = document.getElementById("reportType").value;
 
             if (type === "daily") {
-                loadChart(
-                    [<?= $daily_on_time ?>, <?= $daily_late ?>, <?= $daily_overdue ?>],
-                    "Today's Report"
-                );
+                loadChart([<?= $daily_on_time ?>, <?= $daily_late ?>, <?= $daily_overdue ?>], "Today's Report");
+                updateAnalysis(<?= $daily_on_time ?>, <?= $daily_late ?>, <?= $daily_overdue ?>, "Today's Report");
             }
 
             if (type === "weekly") {
-                loadChart(
-                    [<?= $weekly_on_time ?>, <?= $weekly_late ?>, <?= $weekly_overdue ?>],
-                    "Weekly Report"
-                );
+                loadChart([<?= $weekly_on_time ?>, <?= $weekly_late ?>, <?= $weekly_overdue ?>], "Weekly Report");
+                updateAnalysis(<?= $weekly_on_time ?>, <?= $weekly_late ?>, <?= $weekly_overdue ?>, "Weekly Report");
             }
 
             if (type === "monthly") {
-                loadChart(
-                    [<?= $monthly_on_time ?>, <?= $monthly_late ?>, <?= $monthly_overdue ?>],
-                    "Monthly Report"
-                );
+                loadChart([<?= $monthly_on_time ?>, <?= $monthly_late ?>, <?= $monthly_overdue ?>], "Monthly Report");
+                updateAnalysis(<?= $monthly_on_time ?>, <?= $monthly_late ?>, <?= $monthly_overdue ?>, "Monthly Report");
             }
 
             if (type === "yearly") {
-                loadChart(
-                    [<?= $yearly_on_time ?>, <?= $yearly_late ?>, <?= $yearly_overdue ?>],
-                    "Yearly Report"
-                );
+                loadChart([<?= $yearly_on_time ?>, <?= $yearly_late ?>, <?= $yearly_overdue ?>], "Yearly Report");
+                updateAnalysis(<?= $yearly_on_time ?>, <?= $yearly_late ?>, <?= $yearly_overdue ?>, "Yearly Report");
             }
         }
 
-        // Load default (Weekly)
         changeReport();
     </script>
 

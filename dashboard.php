@@ -1,3 +1,52 @@
+<?php
+session_start();
+
+// Database connection
+$conn = new mysqli("localhost", "root", "", "library");
+if ($conn->connect_error) {
+  die("Connection failed: " . $conn->connect_error);
+}
+
+// 1️⃣ Total books in catalog
+$sqlTotalBooks = "SELECT COUNT(*) AS total_books FROM boooks";
+$result = $conn->query($sqlTotalBooks);
+if ($result) {
+  $totalBooks = $result->fetch_assoc()['total_books'];
+} else {
+  $totalBooks = 0; // fallback
+}
+
+// 2️⃣ Available copies
+$sqlAvailable = "
+    SELECT SUM(b.total_copies - IFNULL(br.borrowed_count,0)) AS available_copies
+    FROM boooks b
+    LEFT JOIN (
+        SELECT book_id, COUNT(*) AS borrowed_count
+        FROM borrow_requests
+        WHERE status='approved' AND return_status IS NULL
+        GROUP BY book_id
+    ) br ON b.id = br.book_id
+";
+$result = $conn->query($sqlAvailable);
+if ($result) {
+  $availableCopies = $result->fetch_assoc()['available_copies'];
+} else {
+  $availableCopies = 0; // fallback
+}
+
+// 3️⃣ Overdue books
+$sqlOverdue = "
+    SELECT COUNT(*) AS overdue_count
+    FROM borrow_requests
+    WHERE status='approved' AND return_status IS NULL AND due_date < CURDATE()
+";
+$result = $conn->query($sqlOverdue);
+if ($result) {
+  $overdueCount = $result->fetch_assoc()['overdue_count'];
+} else {
+  $overdueCount = 0; // fallback
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -5,7 +54,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Librarian Dashboard</title>
-
   <style>
     body {
       margin: 0;
@@ -43,7 +91,6 @@
       color: #3b5bff;
     }
 
-    /* Main Layout */
     .main {
       margin-left: 250px;
       padding: 30px;
@@ -54,16 +101,11 @@
       font-weight: 600;
     }
 
-    .subtitle {
-      color: #666;
-      margin-bottom: 25px;
-    }
-
-    /* Metric Cards */
     .metrics {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 20px;
+      margin-bottom: 40px;
     }
 
     .card {
@@ -93,7 +135,6 @@
       color: #333;
     }
 
-    /* Main Operations */
     .operations {
       margin-top: 40px;
     }
@@ -103,7 +144,6 @@
       margin-bottom: 10px;
     }
 
-    /* Operation Cards */
     .op-buttons-container {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -130,54 +170,37 @@
       transform: translateY(-5px);
       box-shadow: 0 12px 25px rgba(0, 0, 0, 0.15);
     }
-
-
-    .op-item {
-      padding: 12px 0;
-      border-bottom: 1px solid #eee;
-      font-size: 15px;
-    }
-
-    .op-item:last-child {
-      border-bottom: none;
-    }
   </style>
 </head>
 
 <body>
-  <!-- Sidebar -->
   <div class="sidebar">
     <h2>📚 Livo</h2>
-
     <a href="dashboard.php">Dashboard</a>
     <a href="#">Manage Books</a>
     <a href="#">Return Books</a>
     <a href="#">Borrowings</a>
-    <a href="view.php">View Boooks </a>
-    <a href="#">Overdue Books</a>
-
+    <a href="view.php">View Books</a>
     <h4>Settings</h4>
-    <a href="libnotify.php">Notifications</a>
+    <a href="libnotify.php">Borrow Notification</a>
+    <a href="returnnotify.php">Return Notifications</a>
   </div>
 
   <div class="main">
     <div class="title">Librarian Dashboard</div>
-    <br /><br />
 
     <div class="metrics">
       <div class="card">
         <div class="card-title">Total Books in Catalog</div>
-        <div class="card-value">14,500</div>
+        <div class="card-value"><?php echo $totalBooks; ?></div>
       </div>
-
       <div class="card">
         <div class="card-title">Available Copies</div>
-        <div class="card-value">9,870</div>
+        <div class="card-value"><?php echo $availableCopies; ?></div>
       </div>
-
       <div class="card">
         <div class="card-title">Overdue Books</div>
-        <div class="card-value">28</div>
+        <div class="card-value"><?php echo $overdueCount; ?></div>
       </div>
     </div>
 
@@ -197,9 +220,7 @@
     const cards = document.querySelectorAll(".card");
     window.addEventListener("load", () => {
       cards.forEach((card, i) => {
-        setTimeout(() => {
-          card.classList.add("show");
-        }, i * 150);
+        setTimeout(() => { card.classList.add("show"); }, i * 150);
       });
     });
   </script>
